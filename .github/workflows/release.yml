@@ -13,7 +13,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and validate PGXN distribution zip
         run: |
-          docker run --rm -v "$PWD":/repo -w /repo pgxn/pgxn-tools pgxn-bundle
+          # pgxn-bundle exits 1 when GITHUB_OUTPUT is unset, which it is inside `docker run`
+          docker run --rm -v "$PWD":/repo -w /repo -e GITHUB_OUTPUT=/dev/null pgxn/pgxn-tools pgxn-bundle
           version=${GITHUB_REF_NAME#v}
           test -f jev-$version.zip   # META.json version must match the tag
           echo "ZIP=jev-$version.zip" >> $GITHUB_ENV
