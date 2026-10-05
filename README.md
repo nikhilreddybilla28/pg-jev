@@ -226,6 +226,13 @@ The regression tests never call the live API. To try the real thing, `SET jev.ap
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/PUBLISHING.md](docs/PUBLISHING.md) for release steps.
 
+## odata-jev (text-to-OData)
+
+[`odata-jev/`](odata-jev/) is a separate Python package in this fork that reuses pg-jev's Jev client design for
+another job: turning a plain-language question into an OData V4 or V2 (SAP Gateway) query. An LLM writes candidate
+queries, a validator checks them against the service's `$metadata`, and Jev picks the entity set, trims the
+properties and scores the result. It does not need PostgreSQL. See [odata-jev/README.md](odata-jev/README.md).
+
 ## License
 
 [PostgreSQL License](LICENSE). Jev and TypeSafe are trademarks of their respective owners; this project is not

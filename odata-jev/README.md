@@ -106,6 +106,9 @@ are `Settings` fields too, with `ODATA_JEV_` variables; see `odata_jev/settings.
 }
 ```
 
+`service_url` may carry its own query parameters, such as SAP's `?sap-client=100`; they stay on the final URL,
+ahead of the query options.
+
 `values` makes a property a closed code list: the validator rejects `OverallSDProcessStatus eq 'Open'` and tells the
 LLM to use `'A'`. A full example is `tests/fixtures/sales_tools.json`.
 
@@ -158,7 +161,9 @@ Errors derive from `OdataJevError`. `NoValidQueryError.candidates` says why each
   `sap:requires-filter`, `sap:required-in-filter`, `NonFilterableProperties`, `SearchRestrictions`.
 
 Small slips are fixed without an LLM call and reported with severity `fixed`: `filter` → `$filter`, `"10"` → `10`,
-list values joined, `$count` ↔ `$inlinecount` and `$search` ↔ `search` mapped to the version.
+`$count: 1` → `true`, list values joined, spaces after commas in `$select`/`$orderby`/`$expand` removed, `$format`
+dropped (the caller picks the response format), and `$count` ↔ `$inlinecount` and `$search` ↔ `search` mapped to
+the version.
 
 ## Caveats
 
@@ -180,3 +185,6 @@ ruff check . && ruff format --check .
 
 `tests/mock_jev.py` adapts pg-jev's `test/mock_api.py`; `tests/mock_llm.py` answers chat completions with canned
 JSON chosen by seed. Both also run standalone (`python tests/mock_jev.py 8765`).
+
+To test against a real SAP system (metadata checks, validator vs Gateway, an end-to-end evaluation), follow
+[HANDOFF.md](HANDOFF.md).
