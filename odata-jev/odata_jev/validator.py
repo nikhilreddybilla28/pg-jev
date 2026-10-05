@@ -17,7 +17,7 @@ import difflib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -76,6 +76,13 @@ class TypeInfo:
 ANY = TypeInfo("any")
 BOOL = TypeInfo("bool")
 TEMPORAL = ("date", "datetime", "time")
+ARG_FAMILIES = {"temporal": TEMPORAL, "date_part": ("date", "datetime"), "time_part": ("datetime", "time")}
+STRING_PAIR = ("substringof", "contains", "startswith", "endswith", "indexof", "matchesPattern", "matchespattern")
+NESTED_OPTIONS = {  # what may appear inside Nav(...), Nav/$ref(...), Nav/$count(...) (V4 ABNF expandOption & co.)
+    "": ("$select", "$filter", "$orderby", "$top", "$skip", "$expand", "$count", "$levels", "$search"),
+    "/$ref": ("$filter", "$search", "$orderby", "$top", "$skip", "$count"),
+    "/$count": ("$filter", "$search"),
+}
 
 _OPTION_ORDER = (
     "$filter",
@@ -262,6 +269,12 @@ class _Checker:
         if lit.kind == "datetime_v2" and not _DT_V2.match(v):
             if re.match(r"^\d{4}-\d{2}-\d{2}$", v):
                 self.error(option, f"literal {lit.raw}: SAP Gateway needs the time part: datetime'{v}T00:00:00'")
+            elif _DTO_V2.match(v):
+                self.error(
+                    option,
+                    f"literal {lit.raw}: datetime'…' has no time zone; drop it, or use "
+                    f"datetimeoffset'{v}' for an Edm.DateTimeOffset property",
+                )
             else:
                 self.error(option, f"literal {lit.raw}: expected datetime'YYYY-MM-DDThh:mm:ss'")
         elif lit.kind == "datetimeoffset_v2" and not _DTO_V2.match(v):
@@ -272,6 +285,11 @@ class _Checker:
                 (date.fromisoformat if lit.kind == "date" else datetime.fromisoformat)(text)
             except ValueError:
                 self.error(option, f"literal {lit.raw} is not a valid date")
+        elif lit.kind == "timeofday":
+            try:
+                time.fromisoformat(v)
+            except ValueError:
+                self.error(option, f"literal {lit.raw} is not a valid time of day")
         elif lit.kind == "guid_v2" and not _GUID.match(v):
             self.error(option, f"literal {lit.raw} is not a valid GUID")
         elif lit.kind in ("time_v2", "duration") and not _DURATION.match(v):
@@ -282,7 +300,10 @@ class _Checker:
         self, node: ex.Call, option: str, root: EntityType, prefix: str, scope: Mapping[str, TypeInfo]
     ) -> TypeInfo:
         f = FUNCTIONS.get(node.name)
-        args = [self.infer(a, option, root, prefix, scope) for a in node.args]
+        if node.name in ("cast", "isof"):  # the last argument is a type name, not a property path
+            args = [ANY if _is_type_name(a) else self.infer(a, option, root, prefix, scope) for a in node.args]
+        else:
+            args = [self.infer(a, option, root, prefix, scope) for a in node.args]
         if f is None:
             self.error(option, f"unknown function {node.name}(){suggest(node.name, list(FUNCTIONS))}")
             return ANY
@@ -307,11 +328,27 @@ class _Checker:
                 f"substringof takes the searched text first: substringof({node.args[1].raw},{node.args[0].text})",
             )
             return BOOL
-        if f.arg_family and f.subject < len(args):
+        if (
+            node.name in ("contains", "startswith", "endswith", "indexof")
+            and isinstance(node.args[0], ex.Literal)
+            and isinstance(node.args[1], ex.Path)
+        ):
+            self.error(
+                option,
+                f"{node.name} takes the property first: {node.name}({node.args[1].text},{node.args[0].raw})",
+            )
+            return TypeInfo(f.returns)
+        if node.name in STRING_PAIR:
+            for a in args:
+                if a.family not in ("string", "any", "null"):
+                    self.error(option, f"{node.name}() compares strings, got {a.describe()}")
+                    break
+        elif f.arg_family and f.subject < len(args):
             subj = args[f.subject]
-            want = TEMPORAL if f.arg_family == "temporal" else (f.arg_family,)
+            want = ARG_FAMILIES.get(f.arg_family, (f.arg_family,))
             if subj.family not in (*want, "any", "null"):
-                self.error(option, f"{node.name}() needs a {f.arg_family} argument, got {subj.describe()}")
+                what = {"date_part": "date", "time_part": "date-time or time-of-day"}.get(f.arg_family, f.arg_family)
+                self.error(option, f"{node.name}() needs a {what} argument, got {subj.describe()}")
         if node.name in ("round", "floor", "ceiling") and args:
             return args[0] if args[0].family != "any" else TypeInfo("numeric")
         return TypeInfo(f.returns)
@@ -340,6 +377,10 @@ class _Checker:
         body = self.infer(node.body, option, root, prefix, inner)
         if body.family not in ("bool", "any"):
             self.error(option, f"the body of {node.op}() must be a condition")
+        if not _uses_variable(node.body, node.var or ""):
+            self.error(
+                option, f"the condition inside {node.op}() must use its variable {node.var}, e.g. {node.var}/Property"
+            )
         return BOOL
 
     def binary(
@@ -356,38 +397,99 @@ class _Checker:
         if op == "in":
             if self.version == "v2":
                 self.error(option, "'in' is V4 only (OData 4.01); use eq ... or eq ...")
-            else:
-                self.warn(option, "'in' needs an OData 4.01 service; 4.0 services need eq ... or eq ...")
-            items = node.right.items if isinstance(node.right, ex.ListExpr) else (node.right,)
-            for it in items:
-                right = self.infer(it, option, root, prefix, scope)
-                self.compare(node.left, left, it, right, option)
+                return BOOL
+            self.warn(option, "'in' needs an OData 4.01 service; 4.0 services need eq ... or eq ...")
+            if isinstance(node.right, ex.ListExpr):
+                for it in node.right.items:
+                    if not isinstance(it, ex.Literal):
+                        self.error(option, "the list after 'in' takes literal values only")
+                        continue
+                    self.compare(node.left, left, it, self.literal(it, option), option)
+                return BOOL
+            coll = self.infer(node.right, option, root, prefix, scope)  # a single expression: a collection
+            if coll.family != "any" and not coll.collection:
+                self.error(option, f"'in' needs a list (a, b) or a collection, got {coll.describe()}")
+            elif coll.family != "any":
+                self.compare(node.left, left, node.right, replace(coll, collection=False, prop=None), option)
             return BOOL
-        right = self.infer(node.right, option, root, prefix, scope)
         if op == "has":
             if self.version == "v2":
                 self.error(option, "'has' is V4 only")
+                return BOOL
+            if left.family not in ("enum", "any"):
+                self.error(option, f"'has' needs an enumeration property on the left, got {left.describe()}")
+            if not (isinstance(node.right, ex.Literal) and node.right.kind in ("enum", "string")):
+                self.error(option, "'has' needs an enumeration literal on the right, e.g. Namespace.Type'Member'")
+            elif left.prop is not None and left.family == "enum":
+                self.check_enum(left, node.right, option)
             return BOOL
+        right = self.infer(node.right, option, root, prefix, scope)
         if op in ("eq", "ne", "gt", "ge", "lt", "le"):
             self.compare(node.left, left, node.right, right, option)
             if op not in ("eq", "ne") and "null" in (left.family, right.family):
                 self.error(option, f"'{op} null' is never true; use eq null or ne null")
-            for t in (left, right):
-                if t.collection or t.family in ("entity", "complex"):
+            for t, other in ((left, right), (right, left)):
+                single_vs_null = op in ("eq", "ne") and other.family == "null" and not t.collection
+                if (t.collection or t.family in ("entity", "complex")) and not single_vs_null:
                     self.error(option, f"{t.describe()} cannot be compared; compare one of its properties")
             return BOOL
-        # arithmetic
-        fams = {left.family, right.family}
-        if fams <= {"numeric", "any"}:
+        return self.arithmetic(op, left, right, option)
+
+    def arithmetic(self, op: str, left: TypeInfo, right: TypeInfo, option: str) -> TypeInfo:
+        """Result types of add/sub/mul/div/divby/mod (V4 Part 2, arithmetic operators)."""
+        a, b = left.family, right.family
+        if {a, b} <= {"numeric", "any"}:
             return TypeInfo("numeric")
-        if fams & set(TEMPORAL) and fams <= {*TEMPORAL, "duration", "any"}:
-            return TypeInfo(next(f for f in (left.family, right.family) if f in TEMPORAL))
-        self.error(option, f"'{op}' needs numbers, got {left.describe()} and {right.describe()}")
+        if "any" in (a, b):
+            return ANY
+        if op in ("add", "sub"):
+            if a in ("date", "datetime") and b == "duration":
+                return TypeInfo(a)
+            if op == "add" and a == "duration" and b in ("date", "datetime"):
+                return TypeInfo(b)
+            if a == b == "duration":
+                return TypeInfo("duration")
+            if op == "sub" and a == b and a in ("date", "datetime"):
+                return TypeInfo("duration")
+        if op in ("mul", "div", "divby") and {a, b} == {"duration", "numeric"} and (op == "mul" or a == "duration"):
+            return TypeInfo("duration")
+        self.error(option, f"'{op}' is not defined for {left.describe()} and {right.describe()}")
         return ANY
 
     def compare(self, ln: ex.Node, lt: TypeInfo, rn: ex.Node, rt: TypeInfo, option: str) -> None:
         a, b = lt.family, rt.family
-        if "any" in (a, b) or "null" in (a, b) or a == b or {a, b} == {"enum", "string"}:
+        for prop_t, other_t, other_n in ((lt, rt, rn), (rt, lt, ln)):
+            if prop_t.family == "enum" and isinstance(other_n, ex.Literal) and other_n.kind in ("enum", "string"):
+                self.check_enum(prop_t, other_n, option)  # 4.01 also accepts the member name as a plain string
+                return
+            if other_t.family == "enum" and isinstance(other_n, ex.Literal) and prop_t.family not in ("enum", "any"):
+                self.error(
+                    option, f"{other_n.raw} is an enumeration literal but {prop_t.describe()} is not an enumeration"
+                )
+                return
+            if (
+                prop_t.family == "duration"
+                and isinstance(other_n, ex.Literal)
+                and other_n.kind == "string"
+                and self.version == "v4"
+                and _DURATION.match(other_n.value)
+            ):
+                return  # 4.01: the duration prefix is optional
+        if self.version == "v2":
+            for prop_t, other_n in ((lt, rn), (rt, ln)):
+                if prop_t.prop is None or not isinstance(other_n, ex.Literal):
+                    continue
+                if prop_t.prop.type == "Edm.DateTime" and other_n.kind == "datetimeoffset_v2":
+                    self.error(option, f"{prop_t.path} is Edm.DateTime: compare it with datetime'…' (no time zone)")
+                    return
+                if prop_t.prop.type == "Edm.DateTimeOffset" and other_n.kind == "datetime_v2":
+                    self.error(
+                        option,
+                        f"{prop_t.path} is Edm.DateTimeOffset: compare it with "
+                        f"datetimeoffset'{other_n.value}Z' (SAP rejects datetime'…' here)",
+                    )
+                    return
+        if "any" in (a, b) or "null" in (a, b) or a == b:
             self.check_code(ln, lt, rn, rt, option)
             return
         if {a, b} == {"date", "datetime"}:
@@ -409,6 +511,24 @@ class _Checker:
                 self.error(option, f"{prop_t.path} is {prop_t.prop.type} but {literal}{tip}")
                 return
         self.error(option, f"cannot compare {lt.describe()} with {rt.describe()}")
+
+    def check_enum(self, prop_t: TypeInfo, lit: ex.Literal, option: str) -> None:
+        """Enum literal: optional qualified type name that must match, then members (names or int64 values)."""
+        if lit.kind == "enum":
+            type_name = self.svc.qualify(lit.raw[: lit.raw.index("'")])
+            if prop_t.prop is not None and type_name != prop_t.prop.type:
+                self.error(option, f"{lit.raw} is a {type_name} literal but {prop_t.path} is {prop_t.prop.type}")
+                return
+        values = prop_t.prop.values if prop_t.prop is not None else None
+        for member in (m.strip() for m in lit.value.split(",")):
+            if re.fullmatch(r"[+-]?\d+", member):
+                continue  # numeric member value
+            if values and member not in values:
+                self.error(
+                    option,
+                    f"{member!r} is not a member of {prop_t.path}; use one of: "
+                    + ", ".join(f"{k!r}" for k in list(values)[:12]),
+                )
 
     def check_code(self, ln: ex.Node, lt: TypeInfo, rn: ex.Node, rt: TypeInfo, option: str) -> None:
         """Properties with a closed set of codes (SAP status fields, enums) only compare with one of those codes."""
@@ -531,16 +651,27 @@ class _Checker:
         """Returns the expanded navigation paths (V2 needs them to validate $select=Nav/Prop)."""
         expanded: set[str] = set()
         for item in ex.split_top_level(text, ","):
-            if item == "*":
-                continue
             m = re.match(r"^([^()]+?)\s*(?:\((.*)\))?$", item, re.S)
             if not item or m is None:
                 self.error(option, f"malformed item {item!r}")
                 continue
             path_text, opts = m.group(1).strip(), m.group(2)
-            for suffix in ("/$ref", "/$count"):
-                if path_text.endswith(suffix) and self.version == "v4":
-                    path_text = path_text[: -len(suffix)]
+            if path_text in ("*", "*/$ref"):
+                if self.version == "v2" and path_text != "*":
+                    self.error(option, f"{item}: not available in V2")
+                for part in ex.split_top_level(opts or "", ";"):
+                    key, _, value = part.partition("=")
+                    if not part:
+                        continue
+                    if path_text == "*" and key.strip().lower().lstrip("$") == "levels":
+                        self.check_levels(value.strip(), f"{option}(*)")
+                    else:
+                        self.error(option, f"{item}: only $levels may follow *")
+                continue
+            suffix = ""
+            for s in ("/$ref", "/$count"):
+                if path_text.endswith(s) and self.version == "v4":
+                    path_text, suffix = path_text[: -len(s)], s
             if self.version == "v2" and opts is not None:
                 self.error(
                     option,
@@ -597,10 +728,24 @@ class _Checker:
             if not ok or opts is None or cur_type is None:
                 continue
             nested_prefix = f"{prefix}/{'/'.join(walked)}" if prefix else "/".join(walked)
-            self.check_nested(opts, f"{option}({path_text})", cur_type, nested_prefix, depth)
+            self.check_nested(
+                opts, f"{option}({path_text}{suffix})", cur_type, nested_prefix, depth, NESTED_OPTIONS[suffix]
+            )
         return expanded
 
-    def check_nested(self, opts: str, option: str, et: EntityType, prefix: str, depth: int) -> None:
+    def check_levels(self, value: str, label: str) -> None:
+        if not (value == "max" or (value.isdigit() and int(value) >= 1)):
+            self.error(label, f"$levels must be a positive integer or max, got {value!r}")
+
+    def check_nested(
+        self,
+        opts: str,
+        option: str,
+        et: EntityType,
+        prefix: str,
+        depth: int,
+        allowed: tuple[str, ...] = NESTED_OPTIONS[""],
+    ) -> None:
         nested: dict[str, str] = {}
         for part in ex.split_top_level(opts, ";"):
             if not part:
@@ -621,7 +766,9 @@ class _Checker:
                 expanded = self.check_expand(nested["$expand"], f"{option}/$expand", et, prefix, depth + 1)
         for key, value in nested.items():
             label = f"{option}/{key}"
-            if key == "$filter":
+            if key not in allowed:
+                self.error(label, f"{key} is not allowed here; allowed: {', '.join(allowed)}")
+            elif key == "$filter":
                 self.check_filter(value, label, et, prefix)
             elif key == "$select":
                 self.check_select(value, label, et, prefix, expanded)
@@ -634,12 +781,15 @@ class _Checker:
                 if value not in ("true", "false"):
                     self.error(label, "must be true or false")
             elif key == "$levels":
-                if not (value.isdigit() or value == "max"):
-                    self.error(label, "must be a positive integer or max")
-            elif key in ("$expand", "$search"):
-                pass
-            else:
-                self.error(label, f"{key} is not allowed inside $expand")
+                self.check_levels(value, label)
+
+
+def _is_type_name(node: ex.Node) -> bool:
+    return isinstance(node, ex.Path) and len(node.segments) == 1 and "." in node.segments[0]
+
+
+def _uses_variable(node: ex.Node, var: str) -> bool:
+    return any(isinstance(n, ex.Path) and n.segments[0] == var for n in ex.walk(node))
 
 
 def _excerpt(text: str, pos: int) -> str:

@@ -150,6 +150,10 @@ Errors derive from `OdataJevError`. `NoValidQueryError.candidates` says why each
   `$expand=Nav($select=…)`, no `any`/`all` or `in` in V2;
 - literal types against property types (`SalesOrder eq 12345` on an `Edm.String` key is an error), `substringof`
   with swapped arguments, invalid dates, code lists;
+- the grammar itself, against the OData 4.01 ABNF and the Part 2 precedence table: `has`/`in` bind tighter than
+  `not`, relational before equality, enum literals (type name, flag lists, numeric members), `all()` needs a
+  variable and every lambda body must use its variable, valid calendar dates and times, `$expand` item options
+  (`*($levels=…)`, `/$ref(…)`, `/$count(…)`); see `tests/test_spec_conformance.py`;
 - SAP and Capabilities flags: `sap:filterable`, `sap:sortable`, `sap:searchable`, `sap:pageable`,
   `sap:requires-filter`, `sap:required-in-filter`, `NonFilterableProperties`, `SearchRestrictions`.
 

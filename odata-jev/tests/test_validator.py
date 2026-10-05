@@ -248,7 +248,7 @@ def test_closed_code_lists():
     assert check(V4, "SalesOrders", "v4", **{"$filter": "Status eq com.example.sales.OrderStatus'Open'"}).valid
     assert check(V4, "SalesOrders", "v4", **{"$filter": "Status eq 'Completed'"}).valid
     v = check(V4, "SalesOrders", "v4", **{"$filter": "Status eq 'Shipped'"})
-    assert "'Shipped' is not a valid value of Status" in errors(v)[0]
+    assert "'Shipped' is not a member of Status" in errors(v)[0]
 
 
 def test_functions_and_operators():

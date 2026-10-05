@@ -74,14 +74,17 @@ _FUNCS = [
     Function("toupper", 1, 1, "string", "string"),
     Function("trim", 1, 1, "string", "string"),
     Function("concat", 2, 2, "string"),
+    # 4.01 only, where function names are case-insensitive; the spec spells it matchesPattern
+    Function("matchesPattern", 2, 2, "bool", "string", 0, ("v4",), "OData 4.01"),
     Function("matchespattern", 2, 2, "bool", "string", 0, ("v4",), "OData 4.01"),
-    Function("year", 1, 1, "numeric", "temporal"),
-    Function("month", 1, 1, "numeric", "temporal"),
-    Function("day", 1, 1, "numeric", "temporal"),
-    Function("hour", 1, 1, "numeric", "temporal"),
-    Function("minute", 1, 1, "numeric", "temporal"),
-    Function("second", 1, 1, "numeric", "temporal"),
-    Function("fractionalseconds", 1, 1, "numeric", "temporal", 0, ("v4",)),
+    # year(Edm.Date | Edm.DateTimeOffset); hour(Edm.DateTimeOffset | Edm.TimeOfDay); V2: Edm.DateTime (and Edm.Time)
+    Function("year", 1, 1, "numeric", "date_part"),
+    Function("month", 1, 1, "numeric", "date_part"),
+    Function("day", 1, 1, "numeric", "date_part"),
+    Function("hour", 1, 1, "numeric", "time_part"),
+    Function("minute", 1, 1, "numeric", "time_part"),
+    Function("second", 1, 1, "numeric", "time_part"),
+    Function("fractionalseconds", 1, 1, "numeric", "time_part", 0, ("v4",)),
     Function("totaloffsetminutes", 1, 1, "numeric", "datetime", 0, ("v4",)),
     Function("totalseconds", 1, 1, "numeric", "duration", 0, ("v4",)),
     Function("date", 1, 1, "date", "datetime", 0, ("v4",)),
@@ -112,6 +115,7 @@ LITERALS: dict[str, tuple[Family, tuple[Version, ...]]] = {
     "single_suffix": ("numeric", ("v2",)),
     "bool": ("bool", ("v2", "v4")),
     "null": ("null", ("v2", "v4")),
+    "nan_inf": ("numeric", ("v4",)),
     "datetime_v2": ("datetime", ("v2",)),
     "datetimeoffset_v2": ("datetime", ("v2",)),
     "time_v2": ("time", ("v2",)),
@@ -128,6 +132,7 @@ LITERALS: dict[str, tuple[Family, tuple[Version, ...]]] = {
 }
 
 LITERAL_HINT: dict[tuple[str, Version], str] = {
+    ("nan_inf", "v2"): "V2 has no NaN/INF literals here",
     ("datetime_v2", "v4"): "V4 has no datetime'…' literal: write 2024-01-31 for Edm.Date or 2024-01-31T00:00:00Z",
     ("datetimeoffset_v2", "v4"): "V4 has no datetimeoffset'…' literal: write 2024-01-31T00:00:00Z",
     ("time_v2", "v4"): "V4 has no time'…' literal: write 13:20:00 for Edm.TimeOfDay or duration'PT13H20M'",

@@ -157,6 +157,7 @@ class Service(BaseModel):
     entity_sets: list[EntitySet] = Field(default_factory=list)
     entity_types: dict[str, EntityType] = Field(default_factory=dict)
     complex_types: dict[str, ComplexType] = Field(default_factory=dict)
+    aliases: dict[str, str] = Field(default_factory=dict, description="namespace alias → namespace (EDMX)")
     _sets: dict[str, EntitySet] = PrivateAttr(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:
@@ -164,6 +165,11 @@ class Service(BaseModel):
 
     def entity_set(self, name: str) -> EntitySet | None:
         return self._sets.get(name)
+
+    def qualify(self, name: str) -> str:
+        """`Alias.Type` → `Namespace.Type`, using the schema aliases of the $metadata document."""
+        prefix, dot, local = name.rpartition(".")
+        return f"{self.aliases.get(prefix, prefix)}.{local}" if dot else name
 
     def entity_type(self, name: str) -> EntityType | None:
         return self.entity_types.get(name)
@@ -744,5 +750,10 @@ def parse_edmx(source: str | bytes | os.PathLike[str], *, service_url: str | Non
     if not sets:
         raise MetadataError("$metadata declares no entity sets")
     return Service(
-        service_url=service_url, version=version, entity_sets=sets, entity_types=doc.types, complex_types=doc.complex
+        service_url=service_url,
+        version=version,
+        entity_sets=sets,
+        entity_types=doc.types,
+        complex_types=doc.complex,
+        aliases=doc.aliases,
     )

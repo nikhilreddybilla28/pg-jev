@@ -3,9 +3,14 @@
 The parser accepts the union of V2 and V4 syntax. Deciding what a version allows is the validator's job, so an
 expression like `contains(Name,'x')` parses fine and the validator then rejects it for V2 with a useful message.
 
-Precedence, lowest first, as in the V2 and V4 specs: or, and, comparison (eq ne gt ge lt le has in),
-additive (add sub), multiplicative (mul div divby mod), unary (not, -), primary. So `not Status eq 'A'` is
-`(not Status) eq 'A'`, which servers reject; the validator reports it and asks for `not (Status eq 'A')`.
+Precedence, lowest first, from the operator precedence table of OData V4.01 Part 2 (V2 has the same order
+without `has` and `in`): or; and; equality (eq ne); relational (gt ge lt le); additive (add sub);
+multiplicative (mul div divby mod); unary (- not); primary (/ navigation, has, in, function calls).
+Operators of one level associate to the left. So `not Status eq 'A'` is `(not Status) eq 'A'`, which servers
+reject, and `not Status has E'X'` is `not (Status has E'X')`.
+
+Operator, lambda and function names are lowercase here: 4.01 services accept any case, 4.0 services do not,
+so lowercase is the only spelling that works everywhere. Uppercase spellings get a parse error that says so.
 """
 
 from __future__ import annotations
@@ -102,7 +107,8 @@ _TOKENS = [
     ("DATETIME", r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?(?![\w:.])"),
     ("DATE", r"\d{4}-\d{2}-\d{2}(?![\w:.-])"),
     ("TIMEOFDAY", r"\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?![\w:.])"),
-    ("NUMBER", r"-?(?:\d+\.\d+|\d+)(?:[eE][+-]?\d+)?[mMdDfFlL]?(?![\w.])"),
+    ("NUMBER", r"[+-]?(?:\d+\.\d+|\d+)(?:[eE][+-]?\d+)?[mMdDfFlL]?(?![\w.])"),
+    ("NANINF", r"(?:NaN|-?INF)(?![\w.])"),
     ("IDENT", r"\$?[A-Za-z_]\w*(?:\.[A-Za-z_*]\w*)*"),
     ("PUNCT", r"[(),/:]"),
     ("MINUS", r"-"),
@@ -121,9 +127,12 @@ _PREFIX_KIND = {
     "geometry": "geo",
 }
 
-COMPARISON = ("eq", "ne", "gt", "ge", "lt", "le", "has")
+EQUALITY = ("eq", "ne")
+RELATIONAL = ("gt", "ge", "lt", "le")
 ADDITIVE = ("add", "sub")
 MULTIPLICATIVE = ("mul", "div", "divby", "mod")
+PRIMARY_OPS = ("has", "in")
+OPERATORS = (*EQUALITY, *RELATIONAL, *ADDITIVE, *MULTIPLICATIVE, *PRIMARY_OPS, "and", "or", "not")
 
 
 def _number_kind(text: str) -> str:
@@ -173,12 +182,16 @@ def tokenize(text: str) -> list[Token]:
             tokens.append(Token("LITERAL", value, pos, "timeofday"))
         elif kind == "NUMBER":
             tokens.append(Token("LITERAL", value, pos, _number_kind(value)))
+        elif kind == "NANINF":
+            tokens.append(Token("LITERAL", value, pos, "nan_inf"))
         elif kind == "IDENT":
             low = value.lower()
             if low in ("true", "false"):
                 tokens.append(Token("LITERAL", value, pos, "bool"))
-            elif low == "null":
+            elif value == "null":
                 tokens.append(Token("LITERAL", value, pos, "null"))
+            elif low == "null":
+                raise ParseError(f"write null in lowercase, not {value}", pos)
             else:
                 tokens.append(Token("IDENT", value, pos))
         else:
@@ -235,6 +248,8 @@ class _Parser:
         node = self.or_expr()
         t = self.peek()
         if t.kind != "EOF":
+            if t.kind == "IDENT" and t.text.lower() in OPERATORS:
+                raise ParseError(f"write the operator {t.text!r} in lowercase: {t.text.lower()!r}", t.pos)
             raise ParseError(f"unexpected {t.text!r}", t.pos)
         return node
 
@@ -246,23 +261,24 @@ class _Parser:
         return left
 
     def and_expr(self) -> Node:
-        left = self.cmp_expr()
+        left = self.eq_expr()
         while self.is_kw("and"):
             t = self.next()
-            left = Binary("and", left, self.cmp_expr(), t.pos)
+            left = Binary("and", left, self.eq_expr(), t.pos)
         return left
 
-    def cmp_expr(self) -> Node:
+    def eq_expr(self) -> Node:
+        left = self.rel_expr()
+        while self.is_kw(*EQUALITY):
+            t = self.next()
+            left = Binary(t.text, left, self.rel_expr(), t.pos)
+        return left
+
+    def rel_expr(self) -> Node:
         left = self.add_expr()
-        if self.is_kw(*COMPARISON):
+        while self.is_kw(*RELATIONAL):
             t = self.next()
-            return Binary(t.text, left, self.add_expr(), t.pos)
-        if self.is_kw("in"):
-            t = self.next()
-            right = self.primary()
-            if isinstance(right, Literal | Path | Call):
-                right = ListExpr((right,), right.pos)
-            return Binary("in", left, right, t.pos)
+            left = Binary(t.text, left, self.add_expr(), t.pos)
         return left
 
     def add_expr(self) -> Node:
@@ -286,7 +302,18 @@ class _Parser:
         if self.is_kw("not") and not self.is_punct("/", 1):
             t = self.next()
             return Unary("not", self.unary(), t.pos)
-        return self.primary()
+        return self.primary_ops()
+
+    def primary_ops(self) -> Node:
+        """`has` and `in` are primary operators: `not A has X` is `not (A has X)`."""
+        left = self.primary()
+        while self.is_kw(*PRIMARY_OPS):
+            t = self.next()
+            right = self.primary()
+            if t.text == "in" and not isinstance(right, ListExpr):
+                right = ListExpr((right,), right.pos) if isinstance(right, Literal) else right
+            left = Binary(t.text, left, right, t.pos)
+        return left
 
     def primary(self) -> Node:
         t = self.peek()
@@ -331,7 +358,9 @@ class _Parser:
             t = self.next()
             if t.kind != "IDENT":
                 raise ParseError(f"expected a property name after '/' but found {t.text or 'end of input'!r}", t.pos)
-            if t.text in ("any", "all") and self.is_punct("("):
+            if t.text.lower() in ("any", "all") and self.is_punct("("):
+                if t.text not in ("any", "all"):
+                    raise ParseError(f"write the lambda operator in lowercase: {t.text.lower()}(...)", t.pos)
                 return self.lambda_(Path(tuple(segs), first.pos), t)
             segs.append(t.text)
         return Path(tuple(segs), first.pos)
@@ -339,6 +368,8 @@ class _Parser:
     def lambda_(self, path: Path, op: Token) -> Node:
         self.expect_punct("(")
         if self.is_punct(")"):
+            if op.text == "all":
+                raise ParseError("all() needs a variable and a condition: all(x: x/... eq ...)", op.pos)
             self.next()
             return Lambda(path, op.text, None, None, op.pos)
         var = self.next()
