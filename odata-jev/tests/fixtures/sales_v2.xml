@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx"
+           xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata"
+           xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="API_SALES_ORDER_SRV" xml:lang="en" sap:schema-version="1"
+            xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="A_SalesOrderType" sap:label="Sales Order Header" sap:content-version="1">
+        <Key><PropertyRef Name="SalesOrder"/></Key>
+        <Property Name="SalesOrder" Type="Edm.String" Nullable="false" MaxLength="10" sap:display-format="UpperCase"
+                  sap:label="Sales Order" sap:quickinfo="Sales Document"/>
+        <Property Name="SalesOrderType" Type="Edm.String" MaxLength="4" sap:display-format="UpperCase"
+                  sap:label="Sales Document Type"/>
+        <Property Name="SoldToParty" Type="Edm.String" MaxLength="10" sap:display-format="UpperCase"
+                  sap:label="Sold-to Party"/>
+        <Property Name="SalesOrderDate" Type="Edm.DateTime" Precision="0" sap:display-format="Date"
+                  sap:label="Document Date" sap:quickinfo="Document Date (Date Received/Sent)"/>
+        <Property Name="LastChangeDateTime" Type="Edm.DateTimeOffset" Precision="7" sap:label="Time Stamp"/>
+        <Property Name="TotalNetAmount" Type="Edm.Decimal" Precision="16" Scale="3" sap:unit="TransactionCurrency"
+                  sap:label="Net Value" sap:quickinfo="Net Value of the Sales Order in Document Currency"/>
+        <Property Name="TransactionCurrency" Type="Edm.String" MaxLength="5" sap:label="Document Currency"
+                  sap:semantics="currency-code"/>
+        <Property Name="OverallSDProcessStatus" Type="Edm.String" MaxLength="1" sap:display-format="UpperCase"
+                  sap:label="Overall Status"/>
+        <Property Name="PurchaseOrderByCustomer" Type="Edm.String" MaxLength="35" sap:label="Customer Reference"/>
+        <Property Name="HeaderBillingBlockReason" Type="Edm.String" MaxLength="2" sap:label="Billing Block"
+                  sap:filterable="false" sap:sortable="false"/>
+        <Property Name="SalesOrganization" Type="Edm.String" MaxLength="4" sap:label="Sales Organization"
+                  sap:required-in-filter="false"/>
+        <NavigationProperty Name="to_Item" Relationship="API_SALES_ORDER_SRV.assoc_SalesOrder_Item"
+                            FromRole="FromRole_assoc_SalesOrder_Item" ToRole="ToRole_assoc_SalesOrder_Item"/>
+        <NavigationProperty Name="to_SoldToParty" Relationship="API_SALES_ORDER_SRV.assoc_SalesOrder_Customer"
+                            FromRole="FromRole_assoc_SalesOrder_Customer" ToRole="ToRole_assoc_SalesOrder_Customer"/>
+      </EntityType>
+      <EntityType Name="A_SalesOrderItemType" sap:label="Sales Order Item" sap:content-version="1">
+        <Key><PropertyRef Name="SalesOrder"/><PropertyRef Name="SalesOrderItem"/></Key>
+        <Property Name="SalesOrder" Type="Edm.String" Nullable="false" MaxLength="10" sap:label="Sales Order"/>
+        <Property Name="SalesOrderItem" Type="Edm.String" Nullable="false" MaxLength="6" sap:label="Item"/>
+        <Property Name="Material" Type="Edm.String" MaxLength="40" sap:label="Material"/>
+        <Property Name="SalesOrderItemText" Type="Edm.String" MaxLength="40" sap:label="Item Description"/>
+        <Property Name="RequestedQuantity" Type="Edm.Decimal" Precision="15" Scale="3" sap:label="Order Quantity"/>
+        <Property Name="NetAmount" Type="Edm.Decimal" Precision="16" Scale="3" sap:label="Net Value"/>
+        <NavigationProperty Name="to_SalesOrder" Relationship="API_SALES_ORDER_SRV.assoc_SalesOrder_Item"
+                            FromRole="ToRole_assoc_SalesOrder_Item" ToRole="FromRole_assoc_SalesOrder_Item"/>
+      </EntityType>
+      <EntityType Name="A_CustomerType" sap:label="Customer" sap:content-version="1">
+        <Key><PropertyRef Name="Customer"/></Key>
+        <Property Name="Customer" Type="Edm.String" Nullable="false" MaxLength="10" sap:label="Customer"/>
+        <Property Name="CustomerName" Type="Edm.String" MaxLength="80" sap:label="Name of Customer"/>
+        <Property Name="Country" Type="Edm.String" MaxLength="3" sap:label="Country/Region Key"/>
+        <Property Name="CreationDate" Type="Edm.DateTime" Precision="0" sap:display-format="Date"
+                  sap:label="Created On"/>
+        <Property Name="DeletionIndicator" Type="Edm.Boolean" sap:label="Deletion Flag"/>
+        <Property Name="CustomerUUID" Type="Edm.Guid" sap:label="Customer UUID"/>
+      </EntityType>
+      <EntityType Name="A_SalesOrderTextType" sap:label="Sales Order Header Text" sap:content-version="1">
+        <Key><PropertyRef Name="SalesOrder"/><PropertyRef Name="Language"/></Key>
+        <Property Name="SalesOrder" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="Language" Type="Edm.String" Nullable="false" MaxLength="2"/>
+        <Property Name="LongText" Type="Edm.String"/>
+      </EntityType>
+      <Association Name="assoc_SalesOrder_Item" sap:content-version="1">
+        <End Type="API_SALES_ORDER_SRV.A_SalesOrderType" Multiplicity="1" Role="FromRole_assoc_SalesOrder_Item"/>
+        <End Type="API_SALES_ORDER_SRV.A_SalesOrderItemType" Multiplicity="*" Role="ToRole_assoc_SalesOrder_Item"/>
+      </Association>
+      <Association Name="assoc_SalesOrder_Customer" sap:content-version="1">
+        <End Type="API_SALES_ORDER_SRV.A_SalesOrderType" Multiplicity="*" Role="FromRole_assoc_SalesOrder_Customer"/>
+        <End Type="API_SALES_ORDER_SRV.A_CustomerType" Multiplicity="0..1" Role="ToRole_assoc_SalesOrder_Customer"/>
+      </Association>
+      <EntityContainer Name="API_SALES_ORDER_SRV_Entities" m:IsDefaultEntityContainer="true"
+                       sap:supported-formats="atom json xlsx">
+        <EntitySet Name="A_SalesOrder" EntityType="API_SALES_ORDER_SRV.A_SalesOrderType" sap:searchable="true"
+                   sap:content-version="1"/>
+        <EntitySet Name="A_SalesOrderItem" EntityType="API_SALES_ORDER_SRV.A_SalesOrderItemType"
+                   sap:content-version="1"/>
+        <EntitySet Name="A_Customer" EntityType="API_SALES_ORDER_SRV.A_CustomerType" sap:content-version="1"/>
+        <EntitySet Name="A_SalesOrderText" EntityType="API_SALES_ORDER_SRV.A_SalesOrderTextType"
+                   sap:addressable="false" sap:pageable="false" sap:content-version="1"/>
+        <AssociationSet Name="assoc_SalesOrder_Item" Association="API_SALES_ORDER_SRV.assoc_SalesOrder_Item"
+                        sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:content-version="1">
+          <End EntitySet="A_SalesOrder" Role="FromRole_assoc_SalesOrder_Item"/>
+          <End EntitySet="A_SalesOrderItem" Role="ToRole_assoc_SalesOrder_Item"/>
+        </AssociationSet>
+        <AssociationSet Name="assoc_SalesOrder_Customer" Association="API_SALES_ORDER_SRV.assoc_SalesOrder_Customer"
+                        sap:content-version="1">
+          <End EntitySet="A_SalesOrder" Role="FromRole_assoc_SalesOrder_Customer"/>
+          <End EntitySet="A_Customer" Role="ToRole_assoc_SalesOrder_Customer"/>
+        </AssociationSet>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

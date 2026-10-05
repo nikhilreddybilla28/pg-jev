@@ -1,0 +1,456 @@
+{
+  "service_url": "https://my-s4.example.com/sap/opu/odata/sap/API_SALES_ORDER_SRV",
+  "version": "v2",
+  "entity_sets": [
+    {
+      "name": "SalesOrder",
+      "entity_type": "A_SalesOrderType",
+      "label": "Sales Order Header",
+      "description": "Sales orders: one row per order with customer, dates, amounts and status",
+      "searchable": true,
+      "keys": [
+        "SalesOrder"
+      ],
+      "properties": [
+        {
+          "name": "SalesOrder",
+          "type": "Edm.String",
+          "label": "Sales Order",
+          "max_length": 10,
+          "description": "Sales document number"
+        },
+        {
+          "name": "SalesOrderType",
+          "type": "Edm.String",
+          "label": "Sales Document Type",
+          "max_length": 4,
+          "values": {
+            "OR": "Standard order",
+            "CR": "Credit memo request",
+            "RE": "Returns"
+          }
+        },
+        {
+          "name": "SalesOrganization",
+          "type": "Edm.String",
+          "label": "Sales Organization",
+          "max_length": 4
+        },
+        {
+          "name": "DistributionChannel",
+          "type": "Edm.String",
+          "label": "Distribution Channel",
+          "max_length": 2
+        },
+        {
+          "name": "OrganizationDivision",
+          "type": "Edm.String",
+          "label": "Division",
+          "max_length": 2
+        },
+        {
+          "name": "SalesGroup",
+          "type": "Edm.String",
+          "label": "Sales Group",
+          "max_length": 3
+        },
+        {
+          "name": "SalesOffice",
+          "type": "Edm.String",
+          "label": "Sales Office",
+          "max_length": 4
+        },
+        {
+          "name": "SalesDistrict",
+          "type": "Edm.String",
+          "label": "Sales District",
+          "max_length": 6
+        },
+        {
+          "name": "SoldToParty",
+          "type": "Edm.String",
+          "label": "Sold-to Party",
+          "max_length": 10,
+          "description": "Customer number of the customer who placed the order"
+        },
+        {
+          "name": "CreationDate",
+          "type": "Edm.DateTime",
+          "label": "Created On",
+          "display_format": "Date"
+        },
+        {
+          "name": "CreatedByUser",
+          "type": "Edm.String",
+          "label": "Created By",
+          "max_length": 12
+        },
+        {
+          "name": "LastChangeDate",
+          "type": "Edm.DateTime",
+          "label": "Last Changed On",
+          "display_format": "Date"
+        },
+        {
+          "name": "LastChangeDateTime",
+          "type": "Edm.DateTimeOffset",
+          "label": "Time Stamp"
+        },
+        {
+          "name": "PurchaseOrderByCustomer",
+          "type": "Edm.String",
+          "label": "Customer Reference",
+          "max_length": 35,
+          "description": "Purchase order number the customer sent"
+        },
+        {
+          "name": "CustomerPurchaseOrderType",
+          "type": "Edm.String",
+          "label": "Purchase Order Type",
+          "max_length": 4
+        },
+        {
+          "name": "CustomerPurchaseOrderDate",
+          "type": "Edm.DateTime",
+          "label": "Customer Reference Date",
+          "display_format": "Date"
+        },
+        {
+          "name": "SalesOrderDate",
+          "type": "Edm.DateTime",
+          "label": "Document Date",
+          "display_format": "Date",
+          "description": "Date the order was received"
+        },
+        {
+          "name": "TotalNetAmount",
+          "type": "Edm.Decimal",
+          "label": "Net Value",
+          "precision": 16,
+          "scale": 3,
+          "description": "Net value of the order in document currency"
+        },
+        {
+          "name": "TransactionCurrency",
+          "type": "Edm.String",
+          "label": "Document Currency",
+          "max_length": 5
+        },
+        {
+          "name": "SDDocumentReason",
+          "type": "Edm.String",
+          "label": "Order Reason",
+          "max_length": 3
+        },
+        {
+          "name": "PricingDate",
+          "type": "Edm.DateTime",
+          "label": "Pricing Date",
+          "display_format": "Date"
+        },
+        {
+          "name": "RequestedDeliveryDate",
+          "type": "Edm.DateTime",
+          "label": "Requested Delivery Date",
+          "display_format": "Date"
+        },
+        {
+          "name": "ShippingCondition",
+          "type": "Edm.String",
+          "label": "Shipping Conditions",
+          "max_length": 2
+        },
+        {
+          "name": "CompleteDeliveryIsDefined",
+          "type": "Edm.Boolean",
+          "label": "Complete Delivery"
+        },
+        {
+          "name": "ShippingType",
+          "type": "Edm.String",
+          "label": "Shipping Type",
+          "max_length": 2
+        },
+        {
+          "name": "HeaderBillingBlockReason",
+          "type": "Edm.String",
+          "label": "Billing Block",
+          "max_length": 2,
+          "filterable": false,
+          "sortable": false
+        },
+        {
+          "name": "DeliveryBlockReason",
+          "type": "Edm.String",
+          "label": "Delivery Block",
+          "max_length": 2
+        },
+        {
+          "name": "IncotermsClassification",
+          "type": "Edm.String",
+          "label": "Incoterms",
+          "max_length": 3
+        },
+        {
+          "name": "IncotermsLocation1",
+          "type": "Edm.String",
+          "label": "Incoterms Location 1",
+          "max_length": 70
+        },
+        {
+          "name": "CustomerPaymentTerms",
+          "type": "Edm.String",
+          "label": "Terms of Payment",
+          "max_length": 4
+        },
+        {
+          "name": "PaymentMethod",
+          "type": "Edm.String",
+          "label": "Payment Method",
+          "max_length": 1
+        },
+        {
+          "name": "AssignmentReference",
+          "type": "Edm.String",
+          "label": "Assignment",
+          "max_length": 18
+        },
+        {
+          "name": "ReferenceSDDocument",
+          "type": "Edm.String",
+          "label": "Reference Document",
+          "max_length": 10
+        },
+        {
+          "name": "AccountingDocExternalReference",
+          "type": "Edm.String",
+          "label": "Reference",
+          "max_length": 16
+        },
+        {
+          "name": "CustomerAccountAssignmentGroup",
+          "type": "Edm.String",
+          "label": "Account Assignment Group",
+          "max_length": 2
+        },
+        {
+          "name": "AccountingExchangeRate",
+          "type": "Edm.Decimal",
+          "label": "Exchange Rate",
+          "precision": 9,
+          "scale": 5
+        },
+        {
+          "name": "OverallSDProcessStatus",
+          "type": "Edm.String",
+          "label": "Overall Status",
+          "max_length": 1,
+          "values": {
+            "A": "Not yet processed (open)",
+            "B": "Partially processed",
+            "C": "Completely processed"
+          }
+        },
+        {
+          "name": "TotalCreditCheckStatus",
+          "type": "Edm.String",
+          "label": "Overall Credit Check Status",
+          "max_length": 1,
+          "values": {
+            "A": "Approved",
+            "B": "Not approved",
+            "D": "Approved by employee"
+          }
+        },
+        {
+          "name": "OverallTotalDeliveryStatus",
+          "type": "Edm.String",
+          "label": "Overall Delivery Status",
+          "max_length": 1,
+          "values": {
+            "A": "Not delivered",
+            "B": "Partially delivered",
+            "C": "Completely delivered"
+          }
+        },
+        {
+          "name": "OverallSDDocumentRejectionSts",
+          "type": "Edm.String",
+          "label": "Rejection Status",
+          "max_length": 1
+        },
+        {
+          "name": "BillingDocumentDate",
+          "type": "Edm.DateTime",
+          "label": "Billing Date",
+          "display_format": "Date"
+        },
+        {
+          "name": "CustomerComment",
+          "type": "Edm.String",
+          "label": "Customer Comment",
+          "description": "Free-text comment the customer entered with the order"
+        }
+      ],
+      "navigation_properties": [
+        {
+          "name": "to_Item",
+          "target": "SalesOrderItem",
+          "collection": true,
+          "label": "Items of the order"
+        },
+        {
+          "name": "to_Customer",
+          "target": "Customer",
+          "collection": false,
+          "label": "Sold-to customer"
+        }
+      ]
+    },
+    {
+      "name": "SalesOrderItem",
+      "entity_type": "A_SalesOrderItemType",
+      "label": "Sales Order Item",
+      "description": "Order line items: material, quantity and net value per item",
+      "keys": [
+        "SalesOrder",
+        "SalesOrderItem"
+      ],
+      "properties": [
+        {
+          "name": "SalesOrder",
+          "type": "Edm.String",
+          "label": "Sales Order",
+          "max_length": 10
+        },
+        {
+          "name": "SalesOrderItem",
+          "type": "Edm.String",
+          "label": "Item",
+          "max_length": 6
+        },
+        {
+          "name": "Material",
+          "type": "Edm.String",
+          "label": "Material",
+          "max_length": 40
+        },
+        {
+          "name": "SalesOrderItemText",
+          "type": "Edm.String",
+          "label": "Item Description",
+          "max_length": 40
+        },
+        {
+          "name": "RequestedQuantity",
+          "type": "Edm.Decimal",
+          "label": "Order Quantity",
+          "precision": 15,
+          "scale": 3
+        },
+        {
+          "name": "RequestedQuantityUnit",
+          "type": "Edm.String",
+          "label": "Sales Unit",
+          "max_length": 3
+        },
+        {
+          "name": "NetAmount",
+          "type": "Edm.Decimal",
+          "label": "Net Value",
+          "precision": 16,
+          "scale": 3
+        },
+        {
+          "name": "TransactionCurrency",
+          "type": "Edm.String",
+          "label": "Document Currency",
+          "max_length": 5
+        },
+        {
+          "name": "Plant",
+          "type": "Edm.String",
+          "label": "Plant",
+          "max_length": 4
+        },
+        {
+          "name": "SDProcessStatus",
+          "type": "Edm.String",
+          "label": "Item Status",
+          "max_length": 1,
+          "values": {
+            "A": "Not yet processed",
+            "B": "Partially processed",
+            "C": "Completely processed"
+          }
+        }
+      ],
+      "navigation_properties": [
+        {
+          "name": "to_SalesOrder",
+          "target": "SalesOrder",
+          "collection": false
+        }
+      ]
+    },
+    {
+      "name": "Customer",
+      "entity_type": "A_CustomerType",
+      "label": "Customer",
+      "description": "Customer master data: name, country and city",
+      "keys": [
+        "Customer"
+      ],
+      "properties": [
+        {
+          "name": "Customer",
+          "type": "Edm.String",
+          "label": "Customer",
+          "max_length": 10
+        },
+        {
+          "name": "CustomerName",
+          "type": "Edm.String",
+          "label": "Name of Customer",
+          "max_length": 80
+        },
+        {
+          "name": "Country",
+          "type": "Edm.String",
+          "label": "Country/Region Key",
+          "max_length": 3,
+          "description": "ISO 3166 alpha-2 code, e.g. DE, US"
+        },
+        {
+          "name": "CityName",
+          "type": "Edm.String",
+          "label": "City",
+          "max_length": 40
+        },
+        {
+          "name": "PostalCode",
+          "type": "Edm.String",
+          "label": "Postal Code",
+          "max_length": 10
+        },
+        {
+          "name": "Industry",
+          "type": "Edm.String",
+          "label": "Industry Key",
+          "max_length": 4
+        },
+        {
+          "name": "CreationDate",
+          "type": "Edm.DateTime",
+          "label": "Created On",
+          "display_format": "Date"
+        },
+        {
+          "name": "DeletionIndicator",
+          "type": "Edm.Boolean",
+          "label": "Deletion Flag"
+        }
+      ]
+    }
+  ]
+}

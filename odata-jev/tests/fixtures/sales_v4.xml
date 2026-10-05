@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml">
+    <edmx:Include Namespace="Org.OData.Core.V1" Alias="Core"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Capabilities.V1.xml">
+    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="https://sap.github.io/odata-vocabularies/vocabularies/Common.xml">
+    <edmx:Include Namespace="com.sap.vocabularies.Common.v1" Alias="SAPCommon"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="com.example.sales" Alias="sales" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EnumType Name="OrderStatus" UnderlyingType="Edm.Byte">
+        <Member Name="Open" Value="0"/>
+        <Member Name="InProcess" Value="1"/>
+        <Member Name="Completed" Value="2"/>
+        <Member Name="Cancelled" Value="3"/>
+      </EnumType>
+      <ComplexType Name="Address">
+        <Property Name="Street" Type="Edm.String" MaxLength="60"/>
+        <Property Name="City" Type="Edm.String" MaxLength="40"/>
+        <Property Name="Country" Type="Edm.String" MaxLength="3"/>
+      </ComplexType>
+      <EntityType Name="SalesOrder">
+        <Key><PropertyRef Name="SalesOrderID"/></Key>
+        <Property Name="SalesOrderID" Type="Edm.String" Nullable="false" MaxLength="10">
+          <Annotation Term="SAPCommon.Label" String="Sales Order"/>
+        </Property>
+        <Property Name="CustomerID" Type="Edm.String" MaxLength="10"/>
+        <Property Name="OrderDate" Type="Edm.Date"/>
+        <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Precision="7"/>
+        <Property Name="NetAmount" Type="Edm.Decimal" Precision="16" Scale="3"/>
+        <Property Name="Currency" Type="Edm.String" MaxLength="5"/>
+        <Property Name="Status" Type="sales.OrderStatus"/>
+        <Property Name="Note" Type="Edm.String"/>
+        <Property Name="IsUrgent" Type="Edm.Boolean"/>
+        <Property Name="ShipTo" Type="sales.Address"/>
+        <Property Name="Tags" Type="Collection(Edm.String)"/>
+        <NavigationProperty Name="Items" Type="Collection(sales.SalesOrderItem)" Partner="Order"/>
+        <NavigationProperty Name="Customer" Type="sales.Customer"/>
+      </EntityType>
+      <EntityType Name="SalesOrderItem">
+        <Key><PropertyRef Name="SalesOrderID"/><PropertyRef Name="ItemNo"/></Key>
+        <Property Name="SalesOrderID" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="ItemNo" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="Material" Type="Edm.String" MaxLength="40"/>
+        <Property Name="Quantity" Type="Edm.Decimal" Precision="13" Scale="3"/>
+        <Property Name="NetAmount" Type="Edm.Decimal" Precision="16" Scale="3"/>
+        <NavigationProperty Name="Order" Type="sales.SalesOrder" Nullable="false" Partner="Items"/>
+      </EntityType>
+      <EntityType Name="Customer">
+        <Key><PropertyRef Name="CustomerID"/></Key>
+        <Property Name="CustomerID" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="Name" Type="Edm.String" MaxLength="80"/>
+        <Property Name="Country" Type="Edm.String" MaxLength="3"/>
+        <Property Name="ExternalID" Type="Edm.Guid"/>
+        <NavigationProperty Name="Orders" Type="Collection(sales.SalesOrder)"/>
+      </EntityType>
+      <EntityContainer Name="Container">
+        <EntitySet Name="SalesOrders" EntityType="sales.SalesOrder">
+          <NavigationPropertyBinding Path="Items" Target="SalesOrderItems"/>
+          <NavigationPropertyBinding Path="Customer" Target="Customers"/>
+          <Annotation Term="Capabilities.FilterRestrictions">
+            <Record>
+              <PropertyValue Property="NonFilterableProperties">
+                <Collection><PropertyPath>Note</PropertyPath></Collection>
+              </PropertyValue>
+            </Record>
+          </Annotation>
+        </EntitySet>
+        <EntitySet Name="SalesOrderItems" EntityType="sales.SalesOrderItem">
+          <NavigationPropertyBinding Path="Order" Target="SalesOrders"/>
+          <Annotation Term="Capabilities.SearchRestrictions">
+            <Record><PropertyValue Property="Searchable" Bool="false"/></Record>
+          </Annotation>
+        </EntitySet>
+        <EntitySet Name="Customers" EntityType="sales.Customer">
+          <NavigationPropertyBinding Path="Orders" Target="SalesOrders"/>
+        </EntitySet>
+      </EntityContainer>
+      <Annotations Target="sales.SalesOrder">
+        <Annotation Term="SAPCommon.Label" String="Sales Order Header"/>
+      </Annotations>
+      <Annotations Target="sales.SalesOrder/NetAmount">
+        <Annotation Term="SAPCommon.Label" String="Net Value"/>
+        <Annotation Term="Core.Description" String="Net value of the order in document currency"/>
+      </Annotations>
+      <Annotations Target="sales.SalesOrder/Note">
+        <Annotation Term="Core.Description">
+          <String>Free-text note the customer entered with the order</String>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="sales.Container/Customers">
+        <Annotation Term="Core.Description" String="Business partners who place sales orders"/>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
