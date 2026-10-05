@@ -1,7 +1,9 @@
 """Settings, read from environment variables by `Settings.from_env()` or passed directly.
 
-Every field has an environment variable (listed in `ENV`). Keyword overrides win over the environment, which wins
-over the defaults below.
+Every field has an environment variable (listed in `ENV`). Precedence: keyword overrides, then the process
+environment, then a `.env` file in the current directory (path in ODATA_JEV_ENV_FILE; empty disables it), then
+the defaults below. The `.env` parser is deliberately small: KEY=VALUE lines, optional `export `, `#` comments,
+optional matching quotes around the value, no variable expansion.
 """
 
 from __future__ import annotations
@@ -65,7 +67,11 @@ class Settings(BaseModel):
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None, **overrides: Any) -> Settings:
-        env = os.environ if environ is None else environ
+        if environ is None:
+            env_file = os.environ.get("ODATA_JEV_ENV_FILE", ".env")
+            env: Mapping[str, str] = {**read_env_file(env_file), **os.environ} if env_file else os.environ
+        else:
+            env = environ
         values: dict[str, Any] = {}
         for field, var in ENV.items():
             raw = env.get(var)
@@ -125,6 +131,34 @@ ENV: dict[str, str] = {
     "min_properties": "ODATA_JEV_MIN_PROPERTIES",
     "max_properties": "ODATA_JEV_MAX_PROPERTIES",
 }
+
+
+def read_env_file(path: str | os.PathLike[str]) -> dict[str, str]:
+    """KEY=VALUE pairs from a .env file; a missing file is an empty mapping."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return {}
+    except OSError as e:
+        raise ConfigError(f"cannot read {path}: {e}") from e
+    out: dict[str, str] = {}
+    for n, line in enumerate(lines, 1):
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s.startswith("export "):
+            s = s[len("export ") :].lstrip()
+        key, eq, value = s.partition("=")
+        key, value = key.strip(), value.strip()
+        if not eq or not key.replace("_", "").isalnum():
+            raise ConfigError(f"{path}:{n}: expected KEY=VALUE")
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()  # trailing comment after an unquoted value
+        out[key] = value
+    return out
 
 
 def normalize_version(v: str) -> Literal["v2", "v4"]:

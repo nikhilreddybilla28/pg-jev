@@ -44,6 +44,7 @@ def _no_live_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests never call live APIs, whatever the developer's shell exports."""
     for var in ("TYPESAFE_API_KEY", "LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL", "JEV_API_URL", "ODATA_VERSION"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("ODATA_JEV_ENV_FILE", "")  # a developer's .env with real keys never reaches a test
 
 
 @pytest.fixture

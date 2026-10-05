@@ -52,7 +52,9 @@ pip install -e ".[dev]"     # Python 3.11+; runtime deps: httpx, pydantic, lxml
 
 ## Settings
 
-Environment variables, or a `Settings(...)` object passed as `settings=`.
+Environment variables, a `.env` file in the current directory, or a `Settings(...)` object passed as `settings=`.
+Copy `.env.example` to `.env` and fill in the keys; `.env` is git-ignored, and variables already set in the
+environment win over it (`ODATA_JEV_ENV_FILE` points elsewhere, empty turns the file off).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

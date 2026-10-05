@@ -33,7 +33,9 @@ export TYPESAFE_API_KEY=...           # https://console.typesafe.ai; not needed 
 export LLM_BASE_URL=https://api.openai.com/v1 LLM_API_KEY=... LLM_MODEL=...   # any OpenAI-compatible server
 ```
 
-Never write a user's real keys into files you commit. Optional: `LLM_PRICE_INPUT_PER_MTOK` and
+Or copy `odata-jev/.env.example` to `.env` in the directory you run from and fill it in; `Settings.from_env()`
+reads it, and real environment variables win over it. `.env` is git-ignored. Never write a user's real keys into
+files you commit. Optional: `LLM_PRICE_INPUT_PER_MTOK` and
 `LLM_PRICE_OUTPUT_PER_MTOK` so LLM cost shows up in the stats (Jev cost is always estimated at $0.042 per million
 input tokens). `JEV_MAX_ITEMS_PER_CALL` caps what one call may send to Jev.
 

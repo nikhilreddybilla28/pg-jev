@@ -54,3 +54,30 @@ def test_normalize_version():
     assert [normalize_version(v) for v in ("v2", "V4", "4.01", "2", "3.0")] == ["v2", "v4", "v4", "v2", "v2"]
     with pytest.raises(ValueError):
         normalize_version("5")
+
+
+def test_env_file(tmp_path, monkeypatch):
+    f = tmp_path / ".env"
+    f.write_text(
+        "# comment\n"
+        "TYPESAFE_API_KEY=from-file\n"
+        "export LLM_MODEL='quoted model'\n"
+        'LLM_BASE_URL="http://localhost:11434/v1"\n'
+        "JEV_BATCH_SIZE=10  # trailing comment\n"
+        "LLM_API_KEY=\n"
+        "\n"
+    )
+    monkeypatch.setenv("ODATA_JEV_ENV_FILE", str(f))
+    monkeypatch.setenv("JEV_BATCH_SIZE", "5")  # the process environment wins over the file
+    s = Settings.from_env()
+    assert s.typesafe_api_key == "from-file" and s.llm_model == "quoted model"
+    assert s.llm_base_url == "http://localhost:11434/v1" and s.jev_batch_size == 5
+    assert s.llm_api_key is None  # empty placeholders are ignored
+    monkeypatch.setenv("ODATA_JEV_ENV_FILE", "")
+    assert Settings.from_env().typesafe_api_key is None  # disabled
+    monkeypatch.setenv("ODATA_JEV_ENV_FILE", str(tmp_path / "missing.env"))
+    assert Settings.from_env().typesafe_api_key is None  # a missing file is fine
+    f.write_text("not a pair\n")
+    monkeypatch.setenv("ODATA_JEV_ENV_FILE", str(f))
+    with pytest.raises(ConfigError, match=r"\.env:1: expected KEY=VALUE"):
+        Settings.from_env()
