@@ -22,7 +22,7 @@ from typing import Any
 import httpx
 
 from . import __version__
-from .errors import LLMError
+from .errors import ConfigError, LLMError
 from .settings import Settings
 from .stats import StatsBook, record_all
 
@@ -49,24 +49,24 @@ class ChatResult:
 
 
 def extract_json(text: str) -> dict[str, Any]:
-    """Parse a JSON object from a reply that may wrap it in ```json fences or prose."""
+    """Parse a JSON object from a reply: the whole reply, else each ``` fence in turn, else the outermost {...}."""
     t = text.strip()
-    fence = re.search(r"```(?:json)?\s*(.*?)```", t, re.S | re.I)
-    if fence:
-        t = fence.group(1).strip()
-    try:
-        obj = json.loads(t)
-    except json.JSONDecodeError:
-        start, end = t.find("{"), t.rfind("}")
-        if start < 0 or end <= start:
-            raise ValueError("no JSON object in the reply") from None
+    attempts = [t] + [m.group(1).strip() for m in re.finditer(r"```(?:json)?\s*(.*?)```", t, re.S | re.I)]
+    start, end = t.find("{"), t.rfind("}")
+    if 0 <= start < end:
+        attempts.append(t[start : end + 1])
+    error = "no JSON object in the reply"
+    for candidate in attempts:
         try:
-            obj = json.loads(t[start : end + 1])
+            obj = json.loads(candidate)
         except json.JSONDecodeError as e:
-            raise ValueError(f"invalid JSON: {e}") from None
-    if not isinstance(obj, dict):
-        raise ValueError(f"expected a JSON object, got {type(obj).__name__}")
-    return obj
+            if candidate.startswith("{"):
+                error = f"invalid JSON: {e}"
+            continue
+        if isinstance(obj, dict):
+            return obj
+        error = f"expected a JSON object, got {type(obj).__name__}"
+    raise ValueError(error)
 
 
 class LLMClient:
@@ -141,7 +141,7 @@ class LLMClient:
             record_all(books, req.label, errors=1)
             raise LLMError(f"odata-jev: unexpected chat completion response: {str(data)[:300]}") from e
         usage = data.get("usage") or {}
-        pt, ct = int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
+        pt, ct = int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0)
         cost = None
         if self.priced:
             cost = (pt * (s.llm_price_input_per_mtok or 0) + ct * (s.llm_price_output_per_mtok or 0)) / 1_000_000
@@ -186,6 +186,11 @@ class LLMClient:
                     except LLMError as e:
                         out.append(e)
                         break
+                    except ConfigError:
+                        raise
+                    except Exception as e:  # one malformed reply must not discard the other candidates
+                        out.append(LLMError(f"odata-jev: chat call failed: {type(e).__name__}: {e}"))
+                        break
         except BaseException:
             for f in futures:
                 f.cancel()
@@ -201,11 +206,14 @@ class LLMClient:
         jitter = min(0.25, s.llm_retry_base_delay)
         last = ""
         for attempt in range(MAX_ATTEMPTS):
+            final = attempt == MAX_ATTEMPTS - 1
             t0 = time.monotonic()
             try:
                 resp = client.post(url, json=body)
             except httpx.TransportError as e:
                 last = f"{type(e).__name__}: {e}"
+                if final:
+                    break
                 record_all(books, label, retries=1)
                 if attempt > 0:
                     time.sleep(delay + random.random() * jitter)
@@ -220,6 +228,8 @@ class LLMClient:
                     raise LLMError(f"odata-jev: LLM returned invalid JSON: {resp.text[:200]}") from e
             last = f"{resp.status_code} {resp.text[:300]}"
             if resp.status_code in (408, 409, 429) or resp.status_code >= 500:
+                if final:
+                    break
                 record_all(books, label, retries=1)
                 wait_s = None
                 ra = resp.headers.get("retry-after")

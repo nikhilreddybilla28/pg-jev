@@ -149,3 +149,31 @@ def test_edmx_errors_and_no_external_entities(tmp_path):
     assert "TOPSECRET" not in (svc.entity_set("S").property("K").description or "")
     with pytest.raises(MetadataError, match="external entity"):  # in an attribute, lxml refuses outright
         parse_edmx(xxe.replace("<String>&s;</String></Annotation>", '<String x="&s;"/></Annotation>'))
+
+
+def test_complex_type_inherits_base_type_properties():
+    svc = parse_edmx("""<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+<edmx:DataServices><Schema Namespace="n" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+<ComplexType Name="Base"><Property Name="City" Type="Edm.String"/></ComplexType>
+<ComplexType Name="Addr" BaseType="n.Base"><Property Name="Street" Type="Edm.String"/></ComplexType>
+<EntityType Name="T"><Key><PropertyRef Name="K"/></Key><Property Name="K" Type="Edm.String"/>
+<Property Name="Address" Type="n.Addr"/></EntityType>
+<EntityContainer Name="C"><EntitySet Name="S" EntityType="n.T"/></EntityContainer>
+</Schema></edmx:DataServices></edmx:Edmx>""")
+    assert [p.name for p in svc.complex_type("n.Addr").properties] == ["City", "Street"]
+    assert svc.resolve(svc.entity_set("S").entity_type, "Address/City").name == "City"
+
+
+@pytest.mark.parametrize(
+    "multiplicity, many", [("*", True), ("0..*", True), ("1..*", True), ("Many", True), ("1", False), ("0..1", False)]
+)
+def test_json_multiplicity(multiplicity, many):
+    svc = load_tools(
+        {
+            "entity_sets": [
+                {"name": "A", "navigation_properties": [{"name": "Bs", "target": "B", "multiplicity": multiplicity}]},
+                {"name": "B"},
+            ]
+        }
+    )
+    assert svc.entity_set("A").navigation("Bs").collection is many

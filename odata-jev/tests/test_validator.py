@@ -322,3 +322,47 @@ def test_not_binds_tighter_than_comparisons():
     assert "'not' binds tighter than comparisons" in errors(v)[0]
     assert check(TOOLS, "Customer", "v2", **{"$filter": "not (Country eq 'DE')"}).valid
     assert check(TOOLS, "Customer", "v2", **{"$filter": "not substringof('x',CustomerName) and Country eq 'DE'"}).valid
+
+
+def test_count_numbers_format_and_list_spacing():
+    v = check(V4, "SalesOrders", "v4", **{"$count": 1, "$format": "json", "$select": "SalesOrderID, NetAmount "})
+    assert v.valid and v.query_options == {"$select": "SalesOrderID,NetAmount", "$count": True}
+    fixes = [i.message for i in v.issues if i.severity == "fixed"]
+    assert any("converted 1 to true" in m for m in fixes) and any("$format=json" in m for m in fixes)
+    assert any("spaces around commas" in m for m in fixes)
+    assert check(TOOLS, "SalesOrder", "v2", **{"$count": 1}).query_options == {"$inlinecount": "allpages"}
+    assert (
+        check(V4, "SalesOrders", "v4", **{"$expand": "Items($select=Material, Quantity), Customer"}).query_options[
+            "$expand"
+        ]
+        == "Items($select=Material, Quantity),Customer"
+    )  # only top-level separators are touched
+
+
+@pytest.mark.parametrize(
+    "flt, ok",
+    [
+        ("CompanyCode eq '1000' and Material eq 'X'", True),
+        ("(CompanyCode eq '1000' or CompanyCode eq '2000') and Material eq 'X'", True),
+        ("ID eq '1' or CompanyCode eq '1000'", False),
+        ("not (CompanyCode eq '1000')", False),
+    ],
+)
+def test_required_filter_needs_a_top_level_and_condition(flt, ok):
+    svc = load_tools(
+        {
+            "entity_sets": [
+                {
+                    "name": "Stock",
+                    "keys": ["ID"],
+                    "properties": [
+                        {"name": "ID"},
+                        {"name": "Material"},
+                        {"name": "CompanyCode", "required_in_filter": True},
+                    ],
+                }
+            ]
+        }
+    )
+    v = validate(svc, "Stock", {"$filter": flt}, "v2")
+    assert v.valid is ok, errors(v)

@@ -306,6 +306,11 @@ class _JsonTools(BaseModel):
         return v
 
 
+def _is_many(multiplicity: str | None) -> bool:
+    m = (multiplicity or "1").strip().lower()
+    return m == "many" or m.endswith("*")  # "*", "0..*", "1..*", "many"
+
+
 def load_json(data: Mapping[str, Any]) -> Service:
     try:
         spec = _JsonTools.model_validate(data)
@@ -351,9 +356,7 @@ def load_json(data: Mapping[str, Any]) -> Service:
                 target_type = n.target
             else:
                 raise MetadataError(f"navigation property {s.name}.{n.name} targets unknown entity set {n.target!r}")
-            many = (
-                n.collection if n.collection is not None else (n.multiplicity or "1").strip() in ("*", "many", "0..*")
-            )
+            many = n.collection if n.collection is not None else _is_many(n.multiplicity)
             navs.append(
                 NavigationProperty(
                     name=n.name, target_type=target_type, collection=many, label=n.label, description=n.description
@@ -616,10 +619,23 @@ class _Edmx:
         )
 
     def build_complex(self) -> None:
-        for qname, el in self.complex_raw.items():
-            self.complex[qname] = ComplexType(
-                name=qname, properties=[self.prop(p, qname) for p in _children(el, "Property")]
-            )
+        for qname in self.complex_raw:
+            self.build_complex_type(qname)
+
+    def build_complex_type(self, qname: str, seen: tuple[str, ...] = ()) -> ComplexType:
+        if qname in self.complex:
+            return self.complex[qname]
+        if qname in seen:
+            raise MetadataError(f"complex type {qname!r} inherits from itself")
+        el = self.complex_raw.get(qname)
+        if el is None:
+            raise MetadataError(f"unknown complex type {qname!r}")
+        props: list[Property] = []
+        if el.get("BaseType"):
+            props = list(self.build_complex_type(self.qualify(el.get("BaseType")), (*seen, qname)).properties)
+        props += [self.prop(p, qname) for p in _children(el, "Property")]
+        self.complex[qname] = ComplexType(name=qname, properties=props)
+        return self.complex[qname]
 
     def build_entity(self, qname: str, seen: tuple[str, ...] = ()) -> EntityType:
         if qname in self.types:

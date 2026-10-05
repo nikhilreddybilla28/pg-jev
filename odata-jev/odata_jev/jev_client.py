@@ -268,7 +268,7 @@ class JevClient:
             record_all(books, label, errors=1)
             raise
         usage = data.get("usage") or {}
-        tin, tout = int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
+        tin, tout = int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
         record_all(
             books,
             label,
@@ -296,11 +296,14 @@ class JevClient:
         jitter = min(0.25, s.jev_retry_base_delay)
         last = ""
         for attempt in range(MAX_ATTEMPTS):
+            final = attempt == MAX_ATTEMPTS - 1  # no sleep and no retry count after the last attempt
             t0 = time.monotonic()
             try:
                 resp = client.post(s.jev_api_url, content=body)
             except httpx.TransportError as e:
                 last = f"{type(e).__name__}: {e}"
+                if final:
+                    break
                 record_all(books, label, retries=1)
                 if attempt > 0:  # the first retry is immediate: a pooled connection may just have gone stale
                     time.sleep(delay + random.random() * jitter)
@@ -314,6 +317,8 @@ class JevClient:
                     raise JevError(f"odata-jev: Jev returned invalid JSON: {resp.text[:200]}") from e
             last = f"{resp.status_code} {resp.text[:300]}"
             if resp.status_code in (408, 429, 529) or resp.status_code >= 500:
+                if final:
+                    break
                 record_all(books, label, retries=1)
                 wait_s = _retry_after(resp)
                 time.sleep(min(wait_s if wait_s is not None else delay, 30.0) + random.random() * jitter)

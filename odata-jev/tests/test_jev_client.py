@@ -140,3 +140,26 @@ def test_argument_checks(client):
     with pytest.raises(ValueError, match="items key"):
         client.noul([1], instruction="Is `{ref}` ok?", context={"items": []})
     assert client.noul([], instruction="Is `{ref}` ok?") == []
+
+
+def test_null_usage_is_zero(settings):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "answers": {"r0": {"type": "noul", "noul": 0.6}},
+                "usage": {"input_tokens": None, "output_tokens": None},
+            },
+        )
+
+    with JevClient(settings, transport=httpx.MockTransport(handler)) as c:
+        assert c.noul([1], instruction="Is `{ref}` ok?") == [0.6]
+        assert c.stats.total().input_tokens == 0
+
+
+def test_retries_stop_after_the_last_attempt(client, jev):
+    jev.failures.extend([(503, {"Retry-After": "0"})] * 7)
+    calls = StatsBook()
+    with pytest.raises(JevError, match="after 7 attempts"):
+        client.noul([{"a": 1}], instruction="Is `{ref}` ok?", context={"question": "q"}, call_stats=calls)
+    assert len(jev.requests) == 7 and calls.total().retries == 6

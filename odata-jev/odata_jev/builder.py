@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from pydantic import BaseModel
 
@@ -19,7 +19,7 @@ _SAFE = "$,()'/:;=@!*"
 
 class BuiltQuery(BaseModel):
     entity_set: str
-    url: str  # absolute when the service URL is known, else the same as `path`
+    url: str  # absolute when the service URL is known (its own query, e.g. sap-client, kept), else `path`
     path: str  # EntitySet?query (encoded), relative to the service root
     query_string: str  # encoded, without the leading ?
     parts: dict[str, str]  # option → rendered value, not encoded
@@ -48,5 +48,10 @@ def build_query(entity_set: str, query_options: Mapping[str, Any], service_url: 
     encoded = {k: encode(v) for k, v in parts.items()}
     qs = "&".join(f"{encode(k)}={v}" for k, v in encoded.items())
     path = encode(entity_set) + (f"?{qs}" if qs else "")
-    url = f"{service_url.rstrip('/')}/{path}" if service_url else path
+    url = path
+    if service_url:
+        # keep the service URL's own parameters, e.g. SAP's ?sap-client=100, ahead of the query options
+        u = urlsplit(service_url)
+        query = "&".join(q for q in (u.query, qs) if q)
+        url = urlunsplit((u.scheme, u.netloc, f"{u.path.rstrip('/')}/{encode(entity_set)}", query, ""))
     return BuiltQuery(entity_set=entity_set, url=url, path=path, query_string=qs, parts=parts, encoded_parts=encoded)

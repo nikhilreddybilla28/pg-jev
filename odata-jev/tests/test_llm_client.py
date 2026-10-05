@@ -1,3 +1,6 @@
+import json
+
+import httpx
 import pytest
 
 from odata_jev.errors import ConfigError, LLMError
@@ -89,3 +92,35 @@ def test_requires_model(settings):
     settings.llm_model = None
     with LLMClient(settings) as c, pytest.raises(ConfigError, match="LLM_MODEL"):
         c.chat_json(ChatRequest(MSG, temperature=0))
+
+
+def test_null_usage_and_unexpected_errors_do_not_sink_other_candidates(settings):
+    def handler(request: httpx.Request) -> httpx.Response:
+        seed = json.loads(request.content)["seed"]
+        if seed == 1:
+            raise RuntimeError("boom")
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"ok": 1}'}}],
+                "usage": {"prompt_tokens": None, "completion_tokens": None},
+            },
+        )
+
+    with LLMClient(settings, transport=httpx.MockTransport(handler)) as c:
+        results = c.chat_json_many([ChatRequest(MSG, temperature=0.7, seed=i) for i in range(3)])
+    assert results[0].data == {"ok": 1} and results[2].data == {"ok": 1}
+    assert isinstance(results[1], LLMError) and "RuntimeError: boom" in str(results[1])
+
+
+def test_extract_json_prefers_the_whole_reply_then_each_fence():
+    assert extract_json('{"rationale": "use ```substringof``` here", "a": 1}')["a"] == 1
+    assert extract_json('```text\nnot json\n```\n```json\n{"a": 2}\n```') == {"a": 2}
+
+
+def test_no_sleep_after_the_last_attempt(client, llm):
+    llm.failures.extend([(503, {"Retry-After": "0"})] * 5)
+    calls = StatsBook()
+    with pytest.raises(LLMError, match="after 5 attempts"):
+        client.chat_json(ChatRequest(MSG, temperature=0), call_stats=calls)
+    assert len(llm.requests) == 5 and calls.total().retries == 4

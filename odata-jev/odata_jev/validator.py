@@ -124,7 +124,6 @@ class _Checker:
         self.version = version
         self.issues: list[Issue] = []
         self.fields: dict[str, None] = {}
-        self.capture: set[str] | None = None  # paths referenced while checking one option
 
     def error(self, option: str, message: str) -> None:
         self.issues.append(Issue(option=option, message=message))
@@ -135,8 +134,6 @@ class _Checker:
     def note(self, path: str) -> None:
         if path:
             self.fields[path] = None
-            if self.capture is not None:
-                self.capture.add(path)
 
     # -------------------------------------------------------------------------------- paths
     def prop_info(self, p: Property, path: str) -> TypeInfo:
@@ -784,6 +781,40 @@ class _Checker:
                 self.check_levels(value, label)
 
 
+def _restricted_properties(text: str) -> set[str]:
+    """Properties a filter restricts the way SAP Gateway turns it into select options: conditions joined by
+    top-level `and`, not negated, and an `or` only when all its branches test the same single property."""
+    try:
+        node = ex.parse(text)
+    except ex.ParseError:
+        return set()
+
+    def conjuncts(n: ex.Node) -> list[ex.Node]:
+        if isinstance(n, ex.Binary) and n.op == "and":
+            return conjuncts(n.left) + conjuncts(n.right)
+        return [n]
+
+    def paths(n: ex.Node) -> set[str]:
+        return {p.text for p in ex.walk(n) if isinstance(p, ex.Path)}
+
+    def disjuncts(n: ex.Node) -> list[ex.Node]:
+        if isinstance(n, ex.Binary) and n.op == "or":
+            return disjuncts(n.left) + disjuncts(n.right)
+        return [n]
+
+    out: set[str] = set()
+    for term in conjuncts(node):
+        if isinstance(term, ex.Unary) and term.op == "not":
+            continue
+        if isinstance(term, ex.Binary) and term.op == "or":
+            sets = [paths(d) for d in disjuncts(term)]
+            if all(len(s) == 1 for s in sets) and len(set().union(*sets)) == 1:
+                out |= sets[0]
+            continue
+        out |= paths(term)
+    return out
+
+
 def _is_type_name(node: ex.Node) -> bool:
     return isinstance(node, ex.Path) and len(node.segments) == 1 and "." in node.segments[0]
 
@@ -813,6 +844,11 @@ def normalize_options(options: Mapping[str, Any], version: Version) -> tuple[dic
         if value is None or (isinstance(value, str) and not value.strip()) or value == []:
             fixed(key, "dropped empty option")
             continue
+        if name == "format":
+            fixed(
+                key, "dropped: the caller picks the response format (SAP V2: $format=json or Accept: application/json)"
+            )
+            continue
         if name not in _KNOWN:
             hint = " (aggregation is not supported; filter and select instead)" if name == "apply" else ""
             issues.append(
@@ -839,6 +875,11 @@ def normalize_options(options: Mapping[str, Any], version: Version) -> tuple[dic
         if isinstance(value, list | tuple) and target in ("$select", "$orderby", "$expand"):
             value = ",".join(str(v).strip() for v in value)
             fixed(target, "joined the list with commas")
+        if isinstance(value, str) and target in ("$select", "$orderby", "$expand"):
+            tidy = ",".join(ex.split_top_level(value.strip(), ","))
+            if tidy != value.strip():
+                fixed(target, "removed spaces around commas (some servers reject them)")
+            value = tidy
         if target in ("$top", "$skip"):
             v = _to_int(value)
             if v is None or v < 0:
@@ -850,6 +891,9 @@ def normalize_options(options: Mapping[str, Any], version: Version) -> tuple[dic
         elif target == "$count":
             if isinstance(value, str) and value.strip().lower() in ("true", "false"):
                 value = value.strip().lower() == "true"
+            elif isinstance(value, int) and not isinstance(value, bool) and value in (0, 1):
+                fixed(target, f"converted {value} to {'true' if value else 'false'}")
+                value = bool(value)
             if not isinstance(value, bool):
                 issues.append(Issue(option=target, message=f"must be true or false, got {value!r}"))
                 continue
@@ -874,7 +918,11 @@ def normalize_options(options: Mapping[str, Any], version: Version) -> tuple[dic
 
 
 def _truthy(v: Any) -> bool:
-    return v is True or (isinstance(v, str) and v.strip().lower() in ("true", "allpages", "1"))
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, int):
+        return v == 1
+    return isinstance(v, str) and v.strip().lower() in ("true", "allpages", "1")
 
 
 def _to_int(v: Any) -> int | None:
@@ -917,12 +965,16 @@ def validate(
     if "$expand" in options:
         expanded = c.check_expand(options["$expand"], "$expand", et, "")
     if "$filter" in options:
-        c.capture = set()
         c.check_filter(options["$filter"], "$filter", et, "")
-        in_filter, c.capture = c.capture, None
-        for req in es.required_in_filter:
-            if req not in in_filter:
-                c.error("$filter", f"this service requires a filter on {req}")
+        if es.required_in_filter:
+            restricted = _restricted_properties(options["$filter"])
+            for req in es.required_in_filter:
+                if req not in restricted:
+                    c.error(
+                        "$filter",
+                        f"this service requires a filter on {req} as a top-level 'and' condition "
+                        "(not under 'not', and in an 'or' only together with itself)",
+                    )
     elif es.requires_filter or es.required_in_filter:
         c.error(
             "$filter",

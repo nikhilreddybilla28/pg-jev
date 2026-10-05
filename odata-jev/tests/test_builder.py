@@ -46,3 +46,11 @@ def test_plus_in_offsets_and_v4_values():
 def test_no_options():
     b = build_query("Customers", {}, "https://h/svc")
     assert b.url == "https://h/svc/Customers" and b.query_string == "" and b.readable == "Customers"
+
+
+def test_service_url_with_its_own_query_parameters():
+    b = build_query("A_SalesOrder", {"$top": 5}, "https://s4/sap/opu/odata/sap/API_SALES_ORDER_SRV/?sap-client=100")
+    assert b.url == "https://s4/sap/opu/odata/sap/API_SALES_ORDER_SRV/A_SalesOrder?sap-client=100&$top=5"
+    assert b.path == "A_SalesOrder?$top=5"
+    b = build_query("A_SalesOrder", {}, "https://s4/sap/opu/odata/sap/API_SALES_ORDER_SRV?sap-client=100")
+    assert b.url == "https://s4/sap/opu/odata/sap/API_SALES_ORDER_SRV/A_SalesOrder?sap-client=100"
